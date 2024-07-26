@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
-	"log"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -14,30 +14,56 @@ import (
 
 type cepHandler struct {
 	brasilApiClient client.CepInterface[entity.BrasilApiCep]
+	viacepClient    client.CepInterface[entity.ViaCep]
 }
 
-func NewCepHandler() *cepHandler {
+func NewCepHandler(brasilApiClient client.CepInterface[entity.BrasilApiCep],
+	viacepClient client.CepInterface[entity.ViaCep]) *cepHandler {
 	return &cepHandler{
-		brasilApiClient: client.NewBrasilApiClient(),
+		brasilApiClient: brasilApiClient,
+		viacepClient:    viacepClient,
 	}
 }
 
 func (h *cepHandler) GetCep(w http.ResponseWriter, r *http.Request) {
 	cep := chi.URLParam(r, "cep")
-	if cep == "" {
-		log.Print("Cep não pode ser vazio")
+	if !isCepValid(cep) {
+		fmt.Printf("Invalid CEP %s", cep)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	resp, err := h.brasilApiClient.GetCep(ctx, cep)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
 
+	c1 := make(chan entity.BrasilApiCep)
+	c2 := make(chan entity.ViaCep)
+
+	go func() {
+		resp, _ := h.brasilApiClient.GetCep(ctx, cep)
+		c1 <- resp
+	}()
+	go func() {
+		resp, _ := h.viacepClient.GetCep(ctx, cep)
+		c2 <- resp
+	}()
+
+	select {
+	case resp := <-c1:
+		fmt.Printf("Received from BrasilAPI [%s] \n", resp.ToString())
+		w.WriteHeader(http.StatusOK)
+
+	case resp := <-c2:
+		fmt.Printf("Received from ViaCep [%s] \n", resp.ToString())
+		w.WriteHeader(http.StatusOK)
+
+	case <-ctx.Done():
+		fmt.Println("Timeout exceeded")
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func isCepValid(value string) bool {
+	_, err := strconv.Atoi(value)
+	return err == nil
 }
