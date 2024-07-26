@@ -3,7 +3,13 @@ Desafio "Multithreading" do curso Go Expert, da Full Cycle
 
 
 # Como executar o código?
+Após baixar o repositório, basta acessar a pasta server em um terminal (~/desafio-multithreading/cmd/server) e executar o comando:
 
+`go run main.go`
+
+Para consultar um cep, basta executar o seguinte curl passando o numero do cep:
+
+`curl --location 'http://localhost:8080/cep/:cep'`
 
 ## Author
 
